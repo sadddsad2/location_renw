@@ -1,0 +1,52 @@
+name: Location-MC 自动续期保活
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"   # 每 12 小时执行一次（UTC 0:00 & 12:00）
+  workflow_dispatch:          # 允许在 GitHub 页面上手动点击运行
+
+permissions:
+  contents: write             # 允许自动提交 time.txt 运行记录
+
+jobs:
+  renew_task:
+    name: 执行保活任务
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 获取仓库代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装基础依赖
+        run: pip install requests
+
+      - name: 启动续期保活脚本
+        env:
+          MC_PANEL_LOGIN:    ${{ secrets.MC_PANEL_LOGIN }}
+          MC_PANEL_PASSWORD: ${{ secrets.MC_PANEL_PASSWORD }}
+          TG_CONFIG:         ${{ secrets.TG_CONFIG }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, ".")
+          import location_renew
+          location_renew.main()
+          PY
+
+      - name: 更新运行日志时间
+        run: |
+          echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> time.txt
+
+      - name: 自动提交变更到代码库
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add time.txt
+          git diff --cached --quiet || git commit -m "chore: auto-renew heart-beat at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          git push
